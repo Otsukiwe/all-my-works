@@ -60,7 +60,7 @@ def rune_matrix():
 
 class TestThread:
     def test_thread_created_with_valid_values(self, basic_thread):
-        assert basic_thread.frequency == 100.0
+        assert basic_thread.frequency == 999.0
         assert basic_thread.stability == 0.5
         assert basic_thread.name == "Тест"
 
