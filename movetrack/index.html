@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pose Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #eee;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 24px;
+    }
+
+    canvas { border-radius: 12px; display: block; }
+
+    #placeholder {
+      width: 400px;
+      height: 400px;
+      border-radius: 12px;
+      background: #1a1a1a;
+      border: 2px dashed #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #555;
+      font-size: 14px;
+    }
+
+    #result {
+      font-size: 28px;
+      font-weight: bold;
+      color: #fff;
+      min-height: 40px;
+      text-align: center;
+    }
+
+    #confidence {
+      font-size: 14px;
+      color: #888;
+      text-align: center;
+      min-height: 20px;
+    }
+
+    .controls { display: flex; gap: 12px; }
+
+    button {
+      padding: 12px 28px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    #btn-start { background: #fff; color: #111; }
+    #btn-start:hover { background: #ddd; }
+    #btn-start:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    #btn-stop { background: #333; color: #fff; }
+    #btn-stop:hover { background: #444; }
+    #btn-stop:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    #error {
+      color: #ff6b6b;
+      font-size: 13px;
+      text-align: center;
+      display: none;
+      max-width: 400px;
+    }
+
+    input {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #eee;
+      font-size: 13px;
+      width: 400px;
+      text-align: center;
+    }
+    input:focus { outline: none; border-color: #555; }
+  </style>
+</head>
+<body>
+
+  <div id="placeholder">Камера выключена</div>
+
+  <div id="result">—</div>
+  <div id="confidence"></div>
+
+  <div class="controls">
+    <button id="btn-start" onclick="startTracking()">▶ Запустить</button>
+    <button id="btn-stop" onclick="stopTracking()" disabled>■ Стоп</button>
+  </div>
+
+  <input id="model-url" value="./model/" placeholder="Путь к модели (./model/)">
+  <div id="error"></div>
+
+<script>
+  let model, webcam, canvas, ctx, animId, running = false;
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  async function startTracking() {
+    document.getElementById('error').style.display = 'none';
+    document.getElementById('btn-start').disabled = true;
+
+    const base = document.getElementById('model-url').value.trim().replace(/\/?$/, '/');
+
+    try {
+      model = await tmPose.load(base + 'model.json', base + 'metadata.json');
+    } catch {
+      showError('Не удалось загрузить модель. Проверьте путь.');
+      document.getElementById('btn-start').disabled = false;
+      return;
+    }
+
+    try {
+      webcam = new tmPose.Webcam(400, 400, true);
+      await webcam.setup();
+      await webcam.play();
+    } catch {
+      showError('Нет доступа к камере.');
+      document.getElementById('btn-start').disabled = false;
+      return;
+    }
+
+    const placeholder = document.getElementById('placeholder');
+    canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 400;
+    ctx = canvas.getContext('2d');
+    placeholder.replaceWith(canvas);
+
+    document.getElementById('btn-stop').disabled = false;
+    running = true;
+    loop();
+  }
+
+  async function loop() {
+    if (!running) return;
+    webcam.update();
+    const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+    const predictions = await model.predict(posenetOutput);
+
+    ctx.clearRect(0, 0, 400, 400);
+    ctx.drawImage(webcam.canvas, 0, 0, 400, 400);
+    if (pose) {
+      tmPose.drawKeypoints(pose.keypoints, 0.5, ctx);
+      tmPose.drawSkeleton(pose.keypoints, 0.5, ctx);
+    }
+
+    const top = predictions.reduce((a, b) => a.probability > b.probability ? a : b);
+    document.getElementById('result').textContent = top.className;
+    document.getElementById('confidence').textContent = (top.probability * 100).toFixed(1) + '%';
+
+    animId = requestAnimationFrame(loop);
+  }
+
+  function stopTracking() {
+    running = false;
+    if (animId) cancelAnimationFrame(animId);
+    if (webcam) webcam.stop();
+
+    const placeholder = document.createElement('div');
+    placeholder.id = 'placeholder';
+    placeholder.textContent = 'Камера выключена';
+    canvas.replaceWith(placeholder);
+
+    document.getElementById('result').textContent = '—';
+    document.getElementById('confidence').textContent = '';
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+  }
+</script>
+</body>
+</html>
